@@ -52,27 +52,12 @@ class ArxivPaper:
 
     @cached_property
     def code_url(self) -> Optional[str]:
-        s = requests.Session()
-        retries = Retry(total=5, backoff_factor=0.1)
-        s.mount('https://', HTTPAdapter(max_retries=retries))
-        try:
-            paper_list = s.get(f'https://paperswithcode.com/api/v1/papers/?arxiv_id={self.arxiv_id}').json()
-        except Exception as e:
-            logger.debug(f'Error when searching {self.arxiv_id}: {e}')
-            return None
+        # paperswithcode is down at 2025.7.26, delete this feature
+        return None
 
-        if paper_list.get('count',0) == 0:
-            return None
-        paper_id = paper_list['results'][0]['id']
-
-        try:
-            repo_list = s.get(f'https://paperswithcode.com/api/v1/papers/{paper_id}/repositories/').json()
-        except Exception as e:
-            logger.debug(f'Error when searching {self.arxiv_id}: {e}')
-            return None
-        if repo_list.get('count',0) == 0:
-            return None
-        return repo_list['results'][0]['url']
+    @cached_property
+    def coolpaper_url(self) -> Optional[str]:
+        return f"https://papers.cool/arxiv/{self.arxiv_id}"
 
     @cached_property
     def tex(self) -> dict[str,str]:

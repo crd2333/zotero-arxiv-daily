@@ -59,8 +59,9 @@ def get_empty_html():
   """
   return block_template
 
-def get_block_html(title:str, authors:str, rate:str,arxiv_id:str, abstract:str, pdf_url:str, code_url:str=None, affiliations:str=None):
+def get_block_html(title:str, authors:str, rate:str,arxiv_id:str, abstract:str, pdf_url:str, code_url:str=None,  coolpaper_url:str=None, affiliations:str=None):
     code = f'<a href="{code_url}" style="display: inline-block; text-decoration: none; font-size: 14px; font-weight: bold; color: #fff; background-color: #5bc0de; padding: 8px 16px; border-radius: 4px; margin-left: 8px;">Code</a>' if code_url else ''
+    coolpaper = f'<a href="{coolpaper_url}" style="display: inline-block; text-decoration: none; font-size: 14px; font-weight: bold; color: #fff; background-color: #5bc0de; padding: 8px 16px; border-radius: 4px; margin-left: 8px;">CoolPaper</a>' if coolpaper_url else ''
     block_template = """
     <table border="0" cellpadding="0" cellspacing="0" width="100%" style="font-family: Arial, sans-serif; border: 1px solid #ddd; border-radius: 8px; padding: 16px; background-color: #f9f9f9;">
     <tr>
@@ -94,12 +95,12 @@ def get_block_html(title:str, authors:str, rate:str,arxiv_id:str, abstract:str, 
     <tr>
         <td style="padding: 8px 0;">
             <a href="{pdf_url}" style="display: inline-block; text-decoration: none; font-size: 14px; font-weight: bold; color: #fff; background-color: #d9534f; padding: 8px 16px; border-radius: 4px;">PDF</a>
-            {code}
+            {code}{coolpaper}
         </td>
     </tr>
 </table>
 """
-    return block_template.format(title=title, authors=authors,rate=rate,arxiv_id=arxiv_id, abstract=abstract, pdf_url=pdf_url, code=code, affiliations=affiliations)
+    return block_template.format(title=title, authors=authors,rate=rate,arxiv_id=arxiv_id, abstract=abstract, pdf_url=pdf_url, code=code, coolpaper=coolpaper, affiliations=affiliations)
 
 def get_stars(score:float):
     full_star = '<span class="full-star">⭐</span>'
@@ -122,12 +123,12 @@ def render_email(papers:list[ArxivPaper]):
     parts = []
     if len(papers) == 0 :
         return framework.replace('__CONTENT__', get_empty_html())
-    
+
     for p in tqdm(papers,desc='Rendering Email'):
         rate = get_stars(p.score)
         author_list = [a.name for a in p.authors]
         num_authors = len(author_list)
-        
+
         if num_authors <= 5:
             authors = ', '.join(author_list)
         else:
@@ -139,7 +140,7 @@ def render_email(papers:list[ArxivPaper]):
                 affiliations += ', ...'
         else:
             affiliations = 'Unknown Affiliation'
-        parts.append(get_block_html(p.title, authors,rate,p.arxiv_id ,p.tldr, p.pdf_url, p.code_url, affiliations))
+        parts.append(get_block_html(p.title, authors,rate,p.arxiv_id ,p.tldr, p.pdf_url, p.code_url, p.coolpaper_url, affiliations))
         time.sleep(10)
 
     content = '<br>' + '</br><br>'.join(parts) + '</br>'

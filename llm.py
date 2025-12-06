@@ -23,8 +23,8 @@ class LLM:
 
     def generate(self, messages: list[dict]) -> str:
         if isinstance(self.llm, OpenAI):
-            max_retries = 10
-            base_delay = 20
+            max_retries = 5
+            base_delay = 5
             for attempt in range(max_retries):
                 try:
                     response = self.llm.chat.completions.create(messages=messages, temperature=0, model=self.model)
