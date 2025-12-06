@@ -29,6 +29,7 @@ from tempfile import mkstemp
 from paper import ArxivPaper
 from llm import set_global_llm
 import feedparser
+from datetime import datetime, timedelta
 
 def get_zotero_corpus(id:str,key:str) -> list[dict]:
     zot = zotero.Zotero(id, 'user', key)
@@ -60,8 +61,43 @@ def filter_corpus(corpus:list[dict], pattern:str) -> list[dict]:
     return new_corpus
 
 
-def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
+def get_arxiv_paper(query:str, debug:bool=False, date:str=None) -> list[ArxivPaper]:
     client = arxiv.Client(num_retries=10,delay_seconds=10)
+
+    if date is not None:
+        try:
+            # Format dates for arXiv API (YYYYMMDD)
+            target_date = datetime.strptime(date, '%Y-%m-%d')
+            date_str = target_date.strftime('%Y%m%d')
+
+            # Transform RSS query format `cs.AI+cs.CV` (provided from secrets) to API query format `(cat:cs.AI OR cat:cs.CV)`
+            categories = query.split('+')
+            api_query_parts = [f'cat:{c.strip()}' for c in categories]
+            api_query_cats = ' OR '.join(api_query_parts)
+            if len(categories) > 1: # Wrap categories in parentheses if there are multiple to ensure correct precedence with AND
+                api_query_cats = f'({api_query_cats})'
+
+            search_query = f'{api_query_cats} AND submittedDate:[{date_str}0000 TO {date_str}2359]'
+            logger.info(f"Searching arXiv papers for date: {date} with query: {search_query}")
+
+            search = arxiv.Search(
+                query=search_query,
+                max_results=1000, # Reasonable limit
+                sort_by=arxiv.SortCriterion.LastUpdatedDate
+            )
+
+            papers = []
+            results = list(client.results(search))
+            logger.info(f"Found {len(results)} papers for date {date}")
+            for r in tqdm(results, desc="Retrieving Arxiv papers"):
+                papers.append(ArxivPaper(r))
+            return papers
+
+        except ValueError:
+            logger.error(f"Invalid date format: {date}. Expected YYYY-MM-DD")
+            if not debug:
+                raise
+
     feed = feedparser.parse(f"https://rss.arxiv.org/atom/{query}")
     if 'Feed error for query' in feed.feed.title:
         raise Exception(f"Invalid ARXIV_QUERY: {query}.")
@@ -113,7 +149,7 @@ def add_argument(*args, **kwargs):
 
 
 if __name__ == '__main__':
-    
+
     add_argument('--zotero_id', type=str, help='Zotero user ID')
     add_argument('--zotero_key', type=str, help='Zotero API key')
     add_argument('--zotero_ignore',type=str,help='Zotero collection to ignore, using gitignore-style pattern.')
@@ -156,6 +192,7 @@ if __name__ == '__main__':
         default="English",
     )
     parser.add_argument('--debug', action='store_true', help='Debug mode')
+    parser.add_argument('--date', type=str, help='Specific date to query (YYYY-MM-DD)', default=None)
     args = parser.parse_args()
     assert (
         not args.use_llm_api or args.openai_api_key is not None
@@ -176,7 +213,7 @@ if __name__ == '__main__':
         corpus = filter_corpus(corpus, args.zotero_ignore)
         logger.info(f"Remaining {len(corpus)} papers after filtering.")
     logger.info("Retrieving Arxiv papers...")
-    papers = get_arxiv_paper(args.arxiv_query, args.debug)
+    papers = get_arxiv_paper(args.arxiv_query, args.debug, args.date)
     if len(papers) == 0:
         logger.info("No new papers found. Yesterday maybe a holiday and no one submit their work :). If this is not the case, please check the ARXIV_QUERY.")
         if not args.send_empty:

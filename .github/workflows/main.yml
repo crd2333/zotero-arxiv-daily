@@ -1,6 +1,11 @@
 name: Send emails daily
 on:
   workflow_dispatch:
+    inputs:
+      date:
+        description: 'Date to query (YYYY-MM-DD)'
+        required: false
+        type: string
   schedule:
     - cron: '0 22 * * *'
 
@@ -38,4 +43,8 @@ jobs:
           MODEL_NAME: ${{ secrets.MODEL_NAME }}
           LANGUAGE: ${{ vars.LANGUAGE }}
         run: |
-          uv run main.py
+          if [ -n "${{ inputs.date }}" ]; then
+            uv run main.py --date "${{ inputs.date }}"
+          else
+            uv run main.py
+          fi
