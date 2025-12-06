@@ -19,28 +19,28 @@ class ArxivPaper:
     def __init__(self,paper:arxiv.Result):
         self._paper = paper
         self.score = None
-    
+
     @property
     def title(self) -> str:
         return self._paper.title
-    
+
     @property
     def summary(self) -> str:
         return self._paper.summary
-    
+
     @property
     def authors(self) -> list[str]:
         return self._paper.authors
-    
+
     @cached_property
     def arxiv_id(self) -> str:
         return re.sub(r'v\d+$', '', self._paper.get_short_id())
-    
+
     @property
     def pdf_url(self) -> str:
         if self._paper.pdf_url is not None:
             return self._paper.pdf_url
-        
+
         pdf_url = f"https://arxiv.org/pdf/{self.arxiv_id}.pdf"
         if self._paper.links is not None:
             pdf_url = self._paper.links[0].href.replace('abs','pdf')
@@ -49,7 +49,7 @@ class ArxivPaper:
         self._paper.pdf_url = pdf_url
 
         return pdf_url
-    
+
     @cached_property
     def code_url(self) -> Optional[str]:
         s = requests.Session()
@@ -73,7 +73,7 @@ class ArxivPaper:
         if repo_list.get('count',0) == 0:
             return None
         return repo_list['results'][0]['url']
-    
+
     @cached_property
     def tex(self) -> dict[str,str]:
         with ExitStack() as stack:
@@ -100,12 +100,12 @@ class ArxivPaper:
             except tarfile.ReadError:
                 logger.debug(f"Failed to find main tex file of {self.arxiv_id}: Not a tar file.")
                 return None
- 
+
             tex_files = [f for f in tar.getnames() if f.endswith('.tex')]
             if len(tex_files) == 0:
                 logger.debug(f"Failed to find main tex file of {self.arxiv_id}: No tex file.")
                 return None
-            
+
             bbl_file = [f for f in tar.getnames() if f.endswith('.bbl')]
             match len(bbl_file) :
                 case 0:
@@ -143,7 +143,7 @@ class ArxivPaper:
                     main_tex = t
                     logger.debug(f"Choose {t} as main tex file of {self.arxiv_id}")
                 file_contents[t] = content
-            
+
             if main_tex is not None:
                 main_source:str = file_contents[main_tex]
                 #find and replace all included sub-files
@@ -159,9 +159,24 @@ class ArxivPaper:
                 logger.debug(f"Failed to find main tex file of {self.arxiv_id}: No tex file containing the document block.")
                 file_contents["all"] = None
         return file_contents
-    
+
     @cached_property
     def tldr(self) -> str:
+        # Check if we can get TLDR from Semantic Scholar
+        if get_llm().lang == 'English':
+             try:
+                s = requests.Session()
+                retries = Retry(total=5, backoff_factor=0.1)
+                s.mount('https://', HTTPAdapter(max_retries=retries))
+
+                # First try to find paper by arXiv ID to get S2 paper ID
+                paper_info = s.get(f'https://api.semanticscholar.org/graph/v1/paper/arXiv:{self.arxiv_id}?fields=tldr').json()
+                if 'tldr' in paper_info and paper_info['tldr']:
+                    logger.info(f"Found TLDR from Semantic Scholar for {self.arxiv_id}")
+                    return paper_info['tldr']['text']
+             except Exception as e:
+                logger.debug(f"Failed to get TLDR from Semantic Scholar for {self.arxiv_id}: {e}")
+
         introduction = ""
         conclusion = ""
         if self.tex is not None:
@@ -184,7 +199,7 @@ class ArxivPaper:
                 conclusion = match.group(0)
         llm = get_llm()
         prompt = """Given the title, abstract, introduction and the conclusion (if any) of a paper in latex format, generate a one-sentence TLDR summary in __LANG__:
-        
+
         \\title{__TITLE__}
         \\begin{abstract}__ABSTRACT__\\end{abstract}
         __INTRODUCTION__
@@ -201,17 +216,21 @@ class ArxivPaper:
         prompt_tokens = enc.encode(prompt)
         prompt_tokens = prompt_tokens[:4000]  # truncate to 4000 tokens
         prompt = enc.decode(prompt_tokens)
-        
-        tldr = llm.generate(
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an assistant who perfectly summarizes scientific paper, and gives the core idea of the paper to the user.",
-                },
-                {"role": "user", "content": prompt},
-            ]
-        )
-        return tldr
+
+        try:
+            tldr = llm.generate(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an assistant who perfectly summarizes scientific paper, and gives the core idea of the paper to the user.",
+                    },
+                    {"role": "user", "content": prompt},
+                ]
+            )
+            return tldr
+        except Exception as e:
+            logger.error(f"Failed to generate TLDR for {self.arxiv_id}: {e}. Using abstract as fallback.")
+            return f"(TL;DR failed, Abstract instead) {self.summary}"
 
     @cached_property
     def affiliations(self) -> Optional[list[str]]:
@@ -235,22 +254,23 @@ class ArxivPaper:
             prompt_tokens = prompt_tokens[:4000]  # truncate to 4000 tokens
             prompt = enc.decode(prompt_tokens)
             llm = get_llm()
-            affiliations = llm.generate(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an assistant who perfectly extracts affiliations of authors from the author information of a paper. You should return a python list of affiliations sorted by the author order, like ['TsingHua University','Peking University']. If an affiliation is consisted of multi-level affiliations, like 'Department of Computer Science, TsingHua University', you should return the top-level affiliation 'TsingHua University' only. Do not contain duplicated affiliations. If there is no affiliation found, you should return an empty list [ ]. You should only return the final list of affiliations, and do not return any intermediate results.",
-                    },
-                    {"role": "user", "content": prompt},
-                ]
-            )
-
             try:
+                affiliations = llm.generate(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an assistant who perfectly extracts affiliations of authors from the author information of a paper. You should return a python list of affiliations sorted by the author order, like ['TsingHua University','Peking University']. If an affiliation is consisted of multi-level affiliations, like 'Department of Computer Science, TsingHua University', you should return the top-level affiliation 'TsingHua University' only. Do not contain duplicated affiliations. If there is no affiliation found, you should return an empty list [ ]. You should only return the final list of affiliations, and do not return any intermediate results.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ]
+                )
+
                 affiliations = re.search(r'\[.*?\]', affiliations, flags=re.DOTALL).group(0)
                 affiliations = eval(affiliations)
                 affiliations = list(set(affiliations))
                 affiliations = [str(a) for a in affiliations]
+                return affiliations
+
             except Exception as e:
-                logger.debug(f"Failed to extract affiliations of {self.arxiv_id}: {e}")
+                logger.error(f"Failed to extract affiliations of {self.arxiv_id}: {e}")
                 return None
-            return affiliations

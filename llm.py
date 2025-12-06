@@ -2,6 +2,7 @@ from llama_cpp import Llama
 from openai import OpenAI
 from loguru import logger
 from time import sleep
+import random
 
 GLOBAL_LLM = None
 
@@ -22,17 +23,21 @@ class LLM:
 
     def generate(self, messages: list[dict]) -> str:
         if isinstance(self.llm, OpenAI):
-            max_retries = 3
+            max_retries = 10
+            base_delay = 20
             for attempt in range(max_retries):
                 try:
                     response = self.llm.chat.completions.create(messages=messages, temperature=0, model=self.model)
-                    break
+                    return response.choices[0].message.content
                 except Exception as e:
                     logger.error(f"Attempt {attempt + 1} failed: {e}")
                     if attempt == max_retries - 1:
                         raise
-                    sleep(3)
-            return response.choices[0].message.content
+
+                    # Exponential backoff with jitter
+                    delay = base_delay * (2 ** attempt)
+                    logger.info(f"Retrying in {delay:.2f} seconds...")
+                    sleep(delay)
         else:
             response = self.llm.create_chat_completion(messages=messages,temperature=0)
             return response["choices"][0]["message"]["content"]
