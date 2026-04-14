@@ -1,0 +1,34 @@
+zotero:
+  user_id: ${oc.env:ZOTERO_ID}
+  api_key: ${oc.env:ZOTERO_KEY}
+  include_path: null # Or set a list of glob patterns, e.g. ["2026/survey/**","2026/reading-group/**"]
+
+email:
+  sender: ${oc.env:SENDER}
+  receiver: ${oc.env:RECEIVER}
+  smtp_server: smtp.qq.com
+  smtp_port: 465
+  sender_password: ${oc.env:SENDER_PASSWORD}
+
+llm:
+  use_local: false # Optional fallback; USE_LLM_API env has higher priority.
+  api:
+    key: ${oc.env:OPENAI_API_KEY}
+    base_url: ${oc.env:OPENAI_API_BASE}
+  local:
+    model: Qwen/Qwen2.5-3B-Instruct-GGUF
+    filename: qwen2.5-3b-instruct-q4_k_m.gguf
+    n_ctx: 8192
+    n_threads: 4
+    max_generation_seconds: ${oc.env:LOCAL_LLM_MAX_SECONDS,1800}
+  generation_kwargs:
+    model: gpt-4o-mini
+
+source:
+  arxiv:
+    category: ["cs.AI","cs.CV","cs.LG","cs.CL"]
+    query_date: null
+
+executor:
+  debug: ${oc.env:DEBUG,null}
+  source: ['arxiv']
